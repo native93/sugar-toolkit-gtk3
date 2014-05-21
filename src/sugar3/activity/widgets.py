@@ -23,6 +23,11 @@ import gettext
 
 from sugar3.graphics.toolbutton import ToolButton
 from sugar3.graphics.toolbarbox import ToolbarButton
+from sugar3.graphics.toggletoolbutton import ToggleToolButton
+from sugar3.graphics import tray
+from jarabe.frame.framewindow import FrameWindow
+from jarabe.frame.clipboardtray import ClipboardTray
+from jarabe.frame.friendstray import FriendsTray
 from sugar3.graphics.radiopalette import RadioPalette, RadioMenuButton
 from sugar3.graphics.radiotoolbutton import RadioToolButton
 from sugar3.graphics.xocolor import XoColor
@@ -306,6 +311,60 @@ class DescriptionItem(ToolButton):
         activity.metadata['description'] = description
         activity.save()
         return False
+
+
+class BulletinButton(ToggleToolButton):
+
+    def __init__(self):
+        ToggleToolButton.__init__(self, icon_name='computer-xo')
+
+        self.set_tooltip("Bulletin Board")
+
+
+class BulletinBoard():
+
+    def __init__(self, activity):
+
+        self.left = self._create_left_panel()
+
+        self.right = self._create_right_panel()
+
+        self.button = BulletinButton()
+        self.button.connect("clicked", self._toggle)
+
+    def _toggle(self, button):
+
+        if button.get_active():
+                self.left.show()
+                self.right.show()
+        else:
+                self.left.hide()
+                self.right.hide()
+
+    def _create_left_panel(self):
+
+        panel = self._create_panel(Gtk.PositionType.LEFT)
+
+        tray = ClipboardTray()
+        panel.append(tray)
+        tray.show()
+
+        return panel
+
+    def _create_right_panel(self):
+
+        panel = self._create_panel(Gtk.PositionType.RIGHT)
+
+        tray = FriendsTray()
+        panel.append(tray)
+        tray.show()
+
+        return panel
+
+    def _create_panel(self, orientation):
+
+        panel = FrameWindow(orientation)
+        return panel
 
 
 class ActivityToolbar(Gtk.Toolbar):
