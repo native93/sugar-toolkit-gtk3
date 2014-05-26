@@ -19,6 +19,7 @@
 
 from gi.repository import Gdk
 from gi.repository import Gtk
+from gi.repository import GObject
 import gettext
 
 from sugar3.graphics.toolbutton import ToolButton
@@ -321,8 +322,35 @@ class BulletinButton(ToggleToolButton):
         self.set_tooltip("Bulletin Board")
 
 
-class BulletinBoard():
+class BulletinChatEntry(Gtk.ToolItem):
+    def __init__(self, **kwargs):
+        Gtk.ToolItem.__init__(self)
+        self.set_expand(True)
 
+        self.entry = Gtk.Entry(**kwargs)
+
+        self.entry.show()
+        self.add(self.entry)
+
+
+class BulletinToolbar(Gtk.Toolbar):
+    def __init__(self):
+        GObject.GObject.__init__(self)
+
+        entry = BulletinChatEntry()
+        entry.show()
+        self.insert(entry, -1)
+
+        separator = Gtk.SeparatorToolItem()
+        separator.props.draw = True
+        separator.set_expand(False)
+        separator.show()
+        self.insert(separator, -1)
+
+        self.show_all()
+
+
+class BulletinBoard():
     def __init__(self, activity):
 
         self.left = self._create_left_panel()
@@ -332,14 +360,22 @@ class BulletinBoard():
         self.button = BulletinButton()
         self.button.connect("clicked", self._toggle)
 
+        self.box_button = ToolbarButton()
+        self.box_button.props.icon_name = 'computer'
+
+        self.toolbar = BulletinToolbar()
+        self.box_button.props.page = self.toolbar
+
     def _toggle(self, button):
 
         if button.get_active():
                 self.left.show()
                 self.right.show()
+                self.box_button.show()
         else:
                 self.left.hide()
                 self.right.hide()
+                self.box_button.hide()
 
     def _create_left_panel(self):
 
