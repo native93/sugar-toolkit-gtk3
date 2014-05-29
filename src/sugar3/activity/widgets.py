@@ -19,9 +19,16 @@
 
 from gi.repository import Gdk
 from gi.repository import Gtk
+from gi.repository import cairo
 from gi.repository import GObject
+from gi.repository import GdkPixbuf
+from gi.repository import Pango
 import gettext
-
+import logging
+import math
+import re
+import os
+import random
 from sugar3.graphics.toolbutton import ToolButton
 from sugar3.graphics.toolbarbox import ToolbarButton
 from sugar3.graphics.toggletoolbutton import ToggleToolButton
@@ -35,8 +42,22 @@ from sugar3.graphics.xocolor import XoColor
 from sugar3.graphics.icon import Icon
 from sugar3.bundle.activitybundle import get_bundle_instance
 from sugar3.graphics import style
+from sugar3.graphics.alert import NotifyAlert
 from sugar3.graphics.palettemenu import PaletteMenuBox
+from sugar3.graphics.palette import Palette
+from sugar3.graphics.palette import MouseSpeedDetector
+
 from sugar3 import profile
+
+
+from telepathy.interfaces import CHANNEL_INTERFACE
+from telepathy.interfaces import CHANNEL_INTERFACE_GROUP
+from telepathy.interfaces import CHANNEL_TYPE_TEXT
+from telepathy.interfaces import CONN_INTERFACE_ALIASING
+from telepathy.constants import CHANNEL_GROUP_FLAG_CHANNEL_SPECIFIC_HANDLES
+from telepathy.constants import CHANNEL_TEXT_MESSAGE_TYPE_NORMAL
+from telepathy.client import Connection
+from telepathy.client import Channel
 
 
 _ = lambda msg: gettext.dgettext('sugar-toolkit-gtk3', msg)
@@ -349,6 +370,128 @@ class BulletinToolbar(Gtk.Toolbar):
 
         self.show_all()
 
+BORDER_DEFAULT = style.LINE_WIDTH
+
+
+class MessageBox(Gtk.HBox):
+    def __init__(self, **kwargs):
+        GObject.GObject.__init__(self, **kwargs)
+
+        self._radius = style.zoom(10)
+        self.border_color = style.Color("#0000FF")
+        self.background_color = style.Color("#FFFF00")
+
+        self.set_resize_mode(Gtk.ResizeMode.PARENT)
+        self.connect("draw", self.__draw_cb)
+        self.connect("add", self.__add_cb)
+
+        self.close_button = ToolButton(icon_name='entry-stop')
+        self.pack_end(self.close_button, False, False, 0)
+
+        self.close_button.connect("clicked", self._close_box)
+
+    def _close_box(self, button):
+        self.get_parent().remove(self)
+
+    def __add_cb(self, widget, params):
+        child.set_border_width(style.zoom(5))
+
+    def __draw_cb(self, widget, cr):
+
+        rect = self.get_allocation()
+        x = rect.x
+        y = rect.y
+        logging.debug("width = " + str(rect.width))
+
+        width = rect.width - BORDER_DEFAULT
+        height = rect.height - BORDER_DEFAULT
+
+        cr.move_to(x, y)
+        cr.arc(x + width - self._radius, y + self._radius,
+                            self._radius, math.pi * 1.5, math.pi * 2)
+        cr.arc(x + width - self._radius, y + height - self._radius,
+                            self._radius, 0, math.pi * 0.5)
+        cr.arc(x + self._radius, y + height - self._radius,
+                            self._radius, math.pi * 0.5, math.pi)
+        cr.arc(x + self._radius, y + self._radius, self._radius,
+                            math.pi, math.pi * 1.5)
+        cr.close_path()
+
+        if self.background_color is not None:
+            r, g, b, __ = self.background_color.get_rgba()
+            cr.set_source_rgb(r, g, b)
+            cr.fill_preserve()
+
+        if self.border_color is not None:
+            r, g, b, __ = self.border_color.get_rgba()
+            cr.set_source_rgb(r, g, b)
+            cr.set_line_width(BORDER_DEFAULT)
+            cr.stroke()
+
+        return False
+
+_URL_REGEXP = re.compile('((http|ftp)s?://)?'
+               '(([-a-zA-Z0-9]+[.])+[-a-zA-Z0-9]{2,}|([0-9]{1,3}[.]){3}[0-9]{1,3})'
+                '(:[1-9][0-9]{0,4})?(/[-a-zA-Z0-9/%~@&_+=;:,.?#]*[a-zA-Z0-9/])?')
+
+
+class TextBox(Gtk.TextView):
+
+    hand_cursor = Gdk.Cursor.new(Gdk.CursorType.HAND2)
+
+    def __init__(self, color, bg_color, lang_rtl=False):
+
+        self._lang_rtl = lang_rtl
+        GObject.GObject.__init__(self)
+        self.set_editable(False)
+        self.set_cursor_visible(False)
+
+        self.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self.get_buffer().set_text("", 0)
+
+        self.iter_text = self.get_buffer().get_iter_at_offset(0)
+
+        self.fg_tag = self.get_buffer().create_tag("foreground_color",
+            foreground=color.get_html())
+
+        self.bold_tag = self.get_buffer().create_tag("bold",
+            weight = Pango.Weight.BOLD)
+
+        self._subscript_tag = self.get_buffer().create_tag('subscript',
+            rise=-7 * Pango.SCALE)
+
+        self.modify_bg(0, bg_color.get_gdk_color())
+
+    def add_text(self, text):
+        buf = self.get_buffer()
+        #buf.insert(self.iter_text, '\n')
+
+        words = text.split()
+        for word in words:
+            if _URL_REGEXP.match(word) is not None:
+                tag = buf.create_tag(None,
+                    foreground="blue", underline=Pango.Underline.SINGLE)
+                tag.set_data("url", word)
+                palette = _URLMenu(word)
+
+                tag.set_data('palette', palette)
+                buf.insert_with_tags(self.iter_text, word, tag,
+                    self.fg_tag, self.bold_tag)
+            else:
+                buf.insert_with_tags(self.iter_text, word, self.fg_tag, self.bold_tag)
+                buf.insert_with_tags(self.iter_text, ' ', self.fg_tag)
+
+
+class ColorLabel(Gtk.Label):
+    def __init__(self, text, color=None):
+
+            GObject.GObject.__init__(self)
+            self.set_use_markup(True)
+            self._color = color
+            if self._color is not None:
+                text = '<span foreground="%s">%s</span>' % (self._color.get_html(), text)
+            self.set_markup(text)
+
 
 class BulletinBoard():
     def __init__(self, activity):
@@ -356,6 +499,14 @@ class BulletinBoard():
         self.left = self._create_left_panel()
 
         self.right = self._create_right_panel()
+
+        self.mb = MessageBox()
+
+        s = Gdk.Screen.get_default()
+        width = s.get_width()
+        height = s.get_height()
+
+        self.fixed = Gtk.Fixed()
 
         self.button = BulletinButton()
         self.button.connect("clicked", self._toggle)
@@ -366,15 +517,42 @@ class BulletinBoard():
         self.toolbar = BulletinToolbar()
         self.box_button.props.page = self.toolbar
 
+        name = ColorLabel(text = "native :", color = style.Color("#000080"))
+        self.name_v = Gtk.VBox()
+        self.name_v.pack_start(name, False, False, 0)
+
+        self.mb.pack_start(self.name_v, False, False, 0)
+
+        msg = TextBox(style.Color("#171ED2"), style.Color("#D21717"))
+        msg.add_text("Hi, This is my first message !!!")
+        #msg.set_size_request(250,10)
+        self.vb = Gtk.VBox()
+        #self.vb.set_size_request(300, 40)
+        self.vb.pack_start(msg, True, True, 0)
+
+        self.mb.pack_start(self.vb, True, True, 0)
+        logging.debug("low = " + str(width) + "high = " + str(height))
+        x = random.randint(30, width)
+        y = random.randint(1, height)
+        self.fixed.put(self.mb, x, y)
+
     def _toggle(self, button):
 
         if button.get_active():
                 self.left.show()
                 self.right.show()
+                self.name_v.show()
+                self.vb.show()
+                self.mb.show()
+                self.fixed.show_all()
                 self.box_button.show()
         else:
                 self.left.hide()
                 self.right.hide()
+                self.vb.hide()
+                self.name_v.hide()
+                self.mb.hide()
+                self.fixed.hide()
                 self.box_button.hide()
 
     def _create_left_panel(self):
