@@ -46,6 +46,8 @@ from sugar3.graphics.alert import NotifyAlert
 from sugar3.graphics.palettemenu import PaletteMenuBox
 from sugar3.graphics.palette import Palette
 from sugar3.graphics.palette import MouseSpeedDetector
+from sugar3.presence import presenceservice
+from sugar3.activity import activity
 
 from sugar3 import profile
 
@@ -358,9 +360,10 @@ class BulletinToolbar(Gtk.Toolbar):
     def __init__(self):
         GObject.GObject.__init__(self)
 
-        entry = BulletinChatEntry()
-        entry.show()
-        self.insert(entry, -1)
+        self.toolitems = BulletinChatEntry()
+        self.toolitems.show()
+
+        self.insert(self.toolitems, -1)
 
         separator = Gtk.SeparatorToolItem()
         separator.props.draw = True
@@ -455,7 +458,7 @@ class TextBox(Gtk.TextView):
             foreground=color.get_html())
 
         self.bold_tag = self.get_buffer().create_tag("bold",
-            weight = Pango.Weight.BOLD)
+            weight=Pango.Weight.BOLD)
 
         self._subscript_tag = self.get_buffer().create_tag('subscript',
             rise=-7 * Pango.SCALE)
@@ -494,17 +497,23 @@ class ColorLabel(Gtk.Label):
 
 
 class BulletinBoard():
-    def __init__(self, activity):
+    def __init__(self, cactivity):
+
+        self._activity = cactivity
+
+        self.is_active = False
 
         self.left = self._create_left_panel()
 
         self.right = self._create_right_panel()
 
+        self.text_channel = None
+
         self.mb = MessageBox()
 
         s = Gdk.Screen.get_default()
-        width = s.get_width()
-        height = s.get_height()
+        self.width = s.get_width()
+        self.height = s.get_height()
 
         self.fixed = Gtk.Fixed()
 
@@ -516,8 +525,12 @@ class BulletinBoard():
 
         self.toolbar = BulletinToolbar()
         self.box_button.props.page = self.toolbar
+        self.toolbar.toolitems.entry.connect('activate', self.entry_activate_cb)
 
-        name = ColorLabel(text = "native :", color = style.Color("#000080"))
+        self.share_button = ShareButton(self._activity)
+        self.share_button.private.props.active = False
+
+        name = ColorLabel(text="native :", color=style.Color("#000080"))
         self.name_v = Gtk.VBox()
         self.name_v.pack_start(name, False, False, 0)
 
@@ -531,10 +544,165 @@ class BulletinBoard():
         self.vb.pack_start(msg, True, True, 0)
 
         self.mb.pack_start(self.vb, True, True, 0)
-        logging.debug("low = " + str(width) + "high = " + str(height))
-        x = random.randint(30, width)
-        y = random.randint(1, height)
+        logging.debug("low = " + str(self.width) + "high = " + str(self.height))
+        x = random.randint(30, self.width)
+        y = random.randint(1, self.height)
         self.fixed.put(self.mb, x, y)
+
+        pserv = presenceservice.get_instance()
+        self.owner = pserv.get_owner()
+
+        # If any shared activity exists
+        if self._activity.shared_activity:
+            self._activity.connect('joined', self._joined_cb)  # joining an activity
+
+            if self._activity.get_shared():  # already joined the activity
+                self._joined_cb(self._activity)
+        else:
+            if not self._activity.metadata or (self._activity.metadata.get('share-scope',
+                    activity.SCOPE_PRIVATE) == activity.SCOPE_PRIVATE):
+                self._alert(_('Off-line'), _('Share, or invite someone.'))
+            self._activity.connect('shared', self._shared_cb)
+
+    def add_text(self, buddy, text):
+
+        if not buddy:
+            buddy = self.owner
+
+        if type(buddy) is dict:
+            nick = buddy['nick']
+            color = buddy['color']
+        else:
+            nick = buddy.props.nick
+            color = buddy.props.color
+
+        try:
+            color_stroke_html, color_fill_html = color.split(',')
+        except ValueError:
+            color_stroke_html, color_fill_html = ('#000000', '#888888')
+
+        """ select box fill and stroke color"""
+
+        color_stroke = style.Color(color_stroke_html)
+        color_fill = style.Color(color_fill_html)
+
+        """ select text color based on fill color """
+
+        color_fill_rgba = style.Color(color_fill_html).get_rgba()
+        color_fill_gray = (color_fill_rgba[0] + color_fill_rgba[1] +
+            color_fill_rgba[2]) / 3
+
+        """ black or white text color based on the intensity """
+
+        if color_fill_gray < 0.5:
+            text_color = style.COLOR_WHITE
+        else:
+            text_color = style.COLOR_BLACK
+
+        """ Right To Left languages """
+
+        if Pango.find_base_dir(nick, -1) == Pango.Direction.RTL:
+            lang_rtl = True
+        else:
+            lang_rtl = False
+
+        """  Generate Round Box with textbox and nick label """
+
+        mb = MessageBox()  # OUTER ROUND BOX
+
+        mb.background_color = color_fill
+        mb.border_color = color_stroke
+
+        name = ColorLabel(text=nick + " :", color=text_color)
+        name_v = Gtk.VBox()  # COLOR LABEL
+        name_v.pack_start(name, False, False, 0)
+
+        mb.pack_start(name_v, False, False, 0)
+
+        msg = TextBox(text_color, color_fill, lang_rtl)  # TEXT BOX
+        msg.add_text(text)
+
+        vb = Gtk.VBox()
+        vb.pack_start(msg, True, True, 0)
+
+        mb.pack_start(vb, True, True, 0)
+
+        logging.debug("nick = " + nick + "text = " + text)
+
+        """ Place randomly on screen """
+
+        x = random.randint(30, self.width - 30)  # hardcoded value still to be changed
+        y = random.randint(1, self.height - 20)
+        self.fixed.put(mb, x, y)
+
+        mb.show()
+
+        if self.is_active:
+            self.fixed.show_all()
+
+    def _setup(self):
+
+        """ Setup Chat Client """
+
+        logging.debug(" Chat setting up ")
+        self.text_channel = TextChannelWrapper(
+            self._activity.shared_activity.telepathy_text_chan,  # use text channel wrapper
+            self._activity.shared_activity.telepathy_conn)
+
+        self.text_channel.set_received_callback(self._received_cb)  # callback for received messaged
+
+        self._alert(_('On-line'), _('Connected'))
+        self._activity.shared_activity.connect('buddy-joined', self._buddy_joined_cb)
+        self._activity.shared_activity.connect('buddy-left', self._buddy_left_cb)
+
+        self.box_button.props.sensitive = True
+
+    def _received_cb(self, buddy, text):
+        if buddy:
+            if type(buddy) is dict:
+                nick = buddy['nick']
+            else:
+                nick = buddy.props.nick
+        else:
+            nick = "???"
+
+        logging.debug("message received from - " + nick)
+
+        self.add_text(buddy, text)
+
+    def _shared_cb(self, sender):
+
+        logging.debug("Activity Shared ! ")
+        self._setup()
+
+    def _joined_cb(self, sender):
+
+        if not self._activity.shared_activity:  # Joined shared activity
+            return
+
+        logging.debug("Joined the session ")
+        for buddy in self._activity.shared_activity.get_joined_buddies():
+            self._buddy_already_exists(buddy)
+
+        self._setup()
+
+    def _buddy_already_exists(self, buddy):
+        if buddy == self.owner:  # the user himself
+            return
+
+        self._alert(buddy.props.nick + ' ' + _('is here'))
+
+    def _buddy_joined_cb(self, sender, buddy):
+        if buddy == self.owner:  # display buddy who joined
+            return
+
+        self._alert(buddy.props.nick + ' ' + _('has joined'))
+
+    def _buddy_left_cb(self, sender, buddy):
+        if buddy == self.owner:  # display buddy who joined
+            return
+
+        self._alert(buddy.props.nick + ' ' + _('left'))
 
     def _toggle(self, button):
 
@@ -545,7 +713,9 @@ class BulletinBoard():
                 self.vb.show()
                 self.mb.show()
                 self.fixed.show_all()
+                self.share_button.show()
                 self.box_button.show()
+                self.is_active = True
         else:
                 self.left.hide()
                 self.right.hide()
@@ -554,6 +724,8 @@ class BulletinBoard():
                 self.mb.hide()
                 self.fixed.hide()
                 self.box_button.hide()
+                self.share_button.hide()
+                self.is_active = False
 
     def _create_left_panel(self):
 
@@ -579,6 +751,29 @@ class BulletinBoard():
 
         panel = FrameWindow(orientation)
         return panel
+
+    def _alert(self, title, text=None):
+        alert = NotifyAlert(timeout=5)
+        alert.props.title = title
+        alert.props.msg = text
+        self._activity.add_alert(alert)
+        alert.connect('response', self._alert_cancel_cb)
+        alert.show()
+
+    def _alert_cancel_cb(self, alert, response_id):
+        self._activity.remove_alert(alert)
+
+    def entry_activate_cb(self, entry):
+
+        text = entry.props.text
+        logging.debug('Entry: ' + text)
+        if text:
+            self.add_text(self.owner, text)
+            entry.props.text = ''
+            if self.text_channel:
+                self.text_channel.send(text)
+            else:
+                logging.debug('Failed to send message')
 
 
 class ActivityToolbar(Gtk.Toolbar):
@@ -669,3 +864,128 @@ class EditToolbar(Gtk.Toolbar):
         self.paste = PasteButton()
         self.insert(self.paste, -1)
         self.paste.show()
+
+"""TextChannelWrapper | Source - Chat Activity """
+
+
+class TextChannelWrapper(object):
+    """Wrap a telepathy Text Channel to make usage simpler."""
+
+    def __init__(self, text_chan, conn):
+        """Connect to the text channel"""
+        self._activity_cb = None
+        self._activity_close_cb = None
+        self._text_chan = text_chan
+        self._conn = conn
+        self._signal_matches = []
+        m = self._text_chan[CHANNEL_INTERFACE].connect_to_signal(
+            'Closed', self._closed_cb)
+        self._signal_matches.append(m)
+
+    def send(self, text):
+        """Send text over the Telepathy text channel."""
+        # XXX Implement CHANNEL_TEXT_MESSAGE_TYPE_ACTION
+        if self._text_chan is not None:
+            self._text_chan[CHANNEL_TYPE_TEXT].Send(
+                CHANNEL_TEXT_MESSAGE_TYPE_NORMAL, text)
+
+    def close(self):
+        """Close the text channel."""
+        logging.debug('Closing text channel')
+        try:
+            self._text_chan[CHANNEL_INTERFACE].Close()
+        except Exception:
+            logging.debug('Channel disappeared!')
+            self._closed_cb()
+
+    def _closed_cb(self):
+        """Clean up text channel."""
+        logging.debug('Text channel closed.')
+        for match in self._signal_matches:
+            match.remove()
+        self._signal_matches = []
+        self._text_chan = None
+        if self._activity_close_cb is not None:
+            self._activity_close_cb()
+
+    def set_received_callback(self, callback):
+        """Connect the function callback to the signal.
+
+        callback -- callback function taking buddy and text args
+        """
+        if self._text_chan is None:
+            return
+        self._activity_cb = callback
+        m = self._text_chan[CHANNEL_TYPE_TEXT].connect_to_signal('Received',
+            self._received_cb)
+        self._signal_matches.append(m)
+
+    def handle_pending_messages(self):
+        """Get pending messages and show them as received."""
+        for identity, timestamp, sender, type_, flags, text in \
+            self._text_chan[
+                CHANNEL_TYPE_TEXT].ListPendingMessages(False):
+            self._received_cb(identity, timestamp, sender, type_, flags, text)
+
+    def _received_cb(self, identity, timestamp, sender, type_, flags, text):
+        """Handle received text from the text channel.
+
+        Converts sender to a Buddy.
+        Calls self._activity_cb which is a callback to the activity.
+        """
+        if type_ != 0:
+            # Exclude any auxiliary messages
+            return
+
+        if self._activity_cb:
+            try:
+                self._text_chan[CHANNEL_INTERFACE_GROUP]
+            except Exception:
+                # One to one XMPP chat
+                nick = self._conn[
+                    CONN_INTERFACE_ALIASING].RequestAliases([sender])[0]
+                buddy = {'nick': nick, 'color': '#000000,#808080'}
+            else:
+                # Normal sugar3 MUC chat
+                # XXX: cache these
+                buddy = self._get_buddy(sender)
+            self._activity_cb(buddy, text)
+            self._text_chan[
+                CHANNEL_TYPE_TEXT].AcknowledgePendingMessages([identity])
+        else:
+            logging.debug('Throwing received message on the floor'
+                ' since there is no callback connected. See '
+                'set_received_callback')
+
+    def set_closed_callback(self, callback):
+        """Connect a callback for when the text channel is closed.
+
+        callback -- callback function taking no args
+
+        """
+        self._activity_close_cb = callback
+
+    def _get_buddy(self, cs_handle):
+        """Get a Buddy from a (possibly channel-specific) handle."""
+        # XXX This will be made redundant once Presence Service
+        # provides buddy resolution
+        # Get the Presence Service
+        pservice = presenceservice.get_instance()
+        # Get the Telepathy Connection
+        tp_name, tp_path = pservice.get_preferred_connection()
+        conn = Connection(tp_name, tp_path)
+        group = self._text_chan[CHANNEL_INTERFACE_GROUP]
+        my_csh = group.GetSelfHandle()
+        if my_csh == cs_handle:
+            handle = conn.GetSelfHandle()
+        elif group.GetGroupFlags() & \
+               CHANNEL_GROUP_FLAG_CHANNEL_SPECIFIC_HANDLES:
+            handle = group.GetHandleOwners([cs_handle])[0]
+        else:
+            handle = cs_handle
+
+            # XXX: deal with failure to get the handle owner
+            assert handle != 0
+
+        return pservice.get_buddy_by_telepathy_handle(
+            tp_name, tp_path, handle)
