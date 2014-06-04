@@ -373,24 +373,30 @@ class BulletinToolbar(Gtk.Toolbar):
 
         self.show_all()
 
-BORDER_DEFAULT = style.LINE_WIDTH
+BORDER_DEFAULT = 3 * style.LINE_WIDTH
 
 
 class MessageBox(Gtk.HBox):
     def __init__(self, **kwargs):
         GObject.GObject.__init__(self, **kwargs)
 
-        self._radius = style.zoom(10)
+        self._radius = style.zoom(20)
         self.border_color = style.Color("#0000FF")
         self.background_color = style.Color("#FFFF00")
 
+        self.modify_bg(0, self.background_color.get_gdk_color())
+
         self.set_resize_mode(Gtk.ResizeMode.PARENT)
         self.connect("draw", self.__draw_cb)
-        self.connect("add", self.__add_cb)
+        #self.connect("add", self.__add_cb)
+
+        close_icon = Icon(icon_name = 'entry-stop')
+        close_icon.props.pixel_size = style.zoom(20)
 
         self.close_button = ToolButton(icon_name='entry-stop')
+        self.close_button.set_icon_widget(close_icon)
+        close_icon.show()
         self.pack_end(self.close_button, False, False, 0)
-
         self.close_button.connect("clicked", self._close_box)
 
     def _close_box(self, button):
@@ -406,7 +412,7 @@ class MessageBox(Gtk.HBox):
         y = rect.y
         logging.debug("width = " + str(rect.width))
 
-        width = rect.width - BORDER_DEFAULT
+        width = rect.width - BORDER_DEFAULT 
         height = rect.height - BORDER_DEFAULT
 
         cr.move_to(x, y)
@@ -463,7 +469,8 @@ class TextBox(Gtk.TextView):
         self._subscript_tag = self.get_buffer().create_tag('subscript',
             rise=-7 * Pango.SCALE)
 
-        self.modify_bg(0, bg_color.get_gdk_color())
+        if bg_color is not None:
+            self.modify_bg(0, bg_color.get_gdk_color())
 
     def add_text(self, text):
         buf = self.get_buffer()
@@ -492,7 +499,7 @@ class ColorLabel(Gtk.Label):
             self.set_use_markup(True)
             self._color = color
             if self._color is not None:
-                text = '<span foreground="%s">%s</span>' % (self._color.get_html(), text)
+                text = '<span foreground="%s">%s </span>' % (self._color.get_html(), text)
             self.set_markup(text)
 
 
@@ -508,8 +515,6 @@ class BulletinBoard():
         self.right = self._create_right_panel()
 
         self.text_channel = None
-
-        self.mb = MessageBox()
 
         s = Gdk.Screen.get_default()
         self.width = s.get_width()
@@ -529,25 +534,6 @@ class BulletinBoard():
 
         self.share_button = ShareButton(self._activity)
         self.share_button.private.props.active = False
-
-        name = ColorLabel(text="native :", color=style.Color("#000080"))
-        self.name_v = Gtk.VBox()
-        self.name_v.pack_start(name, False, False, 0)
-
-        self.mb.pack_start(self.name_v, False, False, 0)
-
-        msg = TextBox(style.Color("#171ED2"), style.Color("#D21717"))
-        msg.add_text("Hi, This is my first message !!!")
-        #msg.set_size_request(250,10)
-        self.vb = Gtk.VBox()
-        #self.vb.set_size_request(300, 40)
-        self.vb.pack_start(msg, True, True, 0)
-
-        self.mb.pack_start(self.vb, True, True, 0)
-        logging.debug("low = " + str(self.width) + "high = " + str(self.height))
-        x = random.randint(30, self.width)
-        y = random.randint(1, self.height)
-        self.fixed.put(self.mb, x, y)
 
         pserv = presenceservice.get_instance()
         self.owner = pserv.get_owner()
@@ -613,19 +599,20 @@ class BulletinBoard():
         mb.background_color = color_fill
         mb.border_color = color_stroke
 
-        name = ColorLabel(text=nick + " :", color=text_color)
+        name = ColorLabel(text=nick + " : ", color=text_color)
         name_v = Gtk.VBox()  # COLOR LABEL
-        name_v.pack_start(name, False, False, 0)
+        name_v.pack_start(name, False, False, style.zoom(10))
 
-        mb.pack_start(name_v, False, False, 0)
+        mb.pack_start(name_v, False, False, style.zoom(10))
 
         msg = TextBox(text_color, color_fill, lang_rtl)  # TEXT BOX
+        msg.set_size_request(10, 10)
         msg.add_text(text)
 
         vb = Gtk.VBox()
-        vb.pack_start(msg, True, True, 0)
+        vb.pack_start(msg, False, False, style.zoom(10))
 
-        mb.pack_start(vb, True, True, 0)
+        mb.pack_start(vb, True, False, style.zoom(10))
 
         logging.debug("nick = " + nick + "text = " + text)
 
@@ -633,7 +620,11 @@ class BulletinBoard():
 
         x = random.randint(30, self.width - 30)  # hardcoded value still to be changed
         y = random.randint(1, self.height - 20)
-        self.fixed.put(mb, x, y)
+
+        ev = Gtk.EventBox()
+        ev.add(mb)
+
+        self.fixed.put(ev, x, y)
 
         mb.show()
 
@@ -709,9 +700,6 @@ class BulletinBoard():
         if button.get_active():
                 self.left.show()
                 self.right.show()
-                self.name_v.show()
-                self.vb.show()
-                self.mb.show()
                 self.fixed.show_all()
                 self.share_button.show()
                 self.box_button.show()
@@ -719,9 +707,6 @@ class BulletinBoard():
         else:
                 self.left.hide()
                 self.right.hide()
-                self.vb.hide()
-                self.name_v.hide()
-                self.mb.hide()
                 self.fixed.hide()
                 self.box_button.hide()
                 self.share_button.hide()
