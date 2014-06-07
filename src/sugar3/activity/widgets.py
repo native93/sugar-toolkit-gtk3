@@ -342,7 +342,7 @@ class BulletinButton(ToggleToolButton):
     def __init__(self):
         ToggleToolButton.__init__(self, icon_name='computer-xo')
 
-        self.set_tooltip("Bulletin Board")
+        self.set_tooltip(_("Bulletin Board"))
 
 
 class BulletinChatEntry(Gtk.ToolItem):
@@ -388,7 +388,7 @@ class MessageBox(Gtk.HBox):
 
         self.set_resize_mode(Gtk.ResizeMode.PARENT)
         self.connect("draw", self.__draw_cb)
-        #self.connect("add", self.__add_cb)
+        self.connect("add", self.__add_cb)
 
         close_icon = Icon(icon_name = 'entry-stop')
         close_icon.props.pixel_size = style.zoom(20)
@@ -398,6 +398,8 @@ class MessageBox(Gtk.HBox):
         close_icon.show()
         self.pack_end(self.close_button, False, False, 0)
         self.close_button.connect("clicked", self._close_box)
+
+        self.drag_source_set(Gdk.ModifierType.BUTTON1_MASK, None, Gdk.DragAction.MOVE)
 
     def _close_box(self, button):
         self.get_parent().remove(self)
@@ -410,10 +412,20 @@ class MessageBox(Gtk.HBox):
         rect = self.get_allocation()
         x = rect.x
         y = rect.y
-        logging.debug("width = " + str(rect.width))
 
-        width = rect.width - BORDER_DEFAULT 
+        width = rect.width - BORDER_DEFAULT
         height = rect.height - BORDER_DEFAULT
+
+        logging.debug("final x = " + str(self.x + rect.width) + "screen width = " + str(Gdk.Screen.width()))
+
+        diff1 = self.x + rect.width - int(Gdk.Screen.width())
+        diff2 = self.y + rect.height - int(Gdk.Screen.height())
+        if (diff1 >= 0 or diff2 >= 0):
+            ev = self.get_parent()
+            fixed = ev.get_parent()
+            self.x = random.randint(self.panel_width, int(Gdk.Screen.width()) - rect.width - self.panel_width)
+            self.y = random.randint(self.panel_width, int(Gdk.Screen.width()) - rect.height - self.panel_width)
+            fixed.move(ev, self.x, self.y)
 
         cr.move_to(x, y)
         cr.arc(x + width - self._radius, y + self._radius,
@@ -516,10 +528,6 @@ class BulletinBoard():
 
         self.text_channel = None
 
-        s = Gdk.Screen.get_default()
-        self.width = s.get_width()
-        self.height = s.get_height()
-
         self.fixed = Gtk.Fixed()
 
         self.button = BulletinButton()
@@ -606,27 +614,40 @@ class BulletinBoard():
         mb.pack_start(name_v, False, False, style.zoom(10))
 
         msg = TextBox(text_color, color_fill, lang_rtl)  # TEXT BOX
-        msg.set_size_request(10, 10)
         msg.add_text(text)
 
+        """  Gtk.Fixed() container for ensuring fixed horizontal width """
+
+        inner = Gtk.Fixed()
+        inner.set_hexpand(False)
+        inner.set_vexpand(True)
+        inner.add(msg)
+
+        if len(text) > int((Gdk.Screen.width() / 4) / 10):
+            msg.set_size_request(int(Gdk.Screen.width() / 4), 30)
+        else:
+            msg.set_wrap_mode(Gtk.WrapMode.NONE)
+
         vb = Gtk.VBox()
-        vb.pack_start(msg, False, False, style.zoom(10))
+        vb.pack_start(inner, False, False, style.zoom(10))
 
         mb.pack_start(vb, True, False, style.zoom(10))
 
-        logging.debug("nick = " + nick + "text = " + text)
+        logging.debug('nick = ' + nick + 'text = ' + text)
 
         """ Place randomly on screen """
 
-        x = random.randint(30, self.width - 30)  # hardcoded value still to be changed
-        y = random.randint(1, self.height - 20)
+        mb.panel_width = style.GRID_CELL_SIZE + style.LINE_WIDTH
+        mb.x = random.randint(mb.panel_width + style.LINE_WIDTH, Gdk.Screen.width() - mb.panel_width)
+        mb.y = random.randint(mb.panel_width + style.LINE_WIDTH, Gdk.Screen.height() - mb.panel_width)
 
         ev = Gtk.EventBox()
         ev.add(mb)
 
-        self.fixed.put(ev, x, y)
-
         mb.show()
+
+        logging.debug("x =" + str(mb.x) + "y= " + str(mb.y))
+        self.fixed.put(ev, mb.x, mb.y)
 
         if self.is_active:
             self.fixed.show_all()
