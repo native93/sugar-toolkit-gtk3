@@ -393,13 +393,48 @@ class MessageBox(Gtk.HBox):
         close_icon = Icon(icon_name = 'entry-stop')
         close_icon.props.pixel_size = style.zoom(20)
 
+        drag_icon = Icon(icon_name = 'go-down')
+        drag_icon.props.pixel_size = style.zoom(20)
+
+        self.drag_button = Gtk.Button()
+        #self.drag_button.set_icon_widget(drag_icon)
+        self.drag_button.set_image(drag_icon)
+        drag_icon.show()
+        self.drag_button.add_events(Gdk.EventMask.POINTER_MOTION_HINT_MASK | \
+                              Gdk.EventMask.POINTER_MOTION_MASK)
+        self.drag_button.connect("motion_notify_event", self.__motion_notify_cb)
+        self.drag_button.connect("enter_notify_event", self.__enter_notify_cb)
+        self.drag_button.connect("button-press-event", self._button_pressed)
+        self.drag_button.connect("button-release-event", self._button_released)
+
         self.close_button = ToolButton(icon_name='entry-stop')
         self.close_button.set_icon_widget(close_icon)
         close_icon.show()
-        self.pack_end(self.close_button, False, False, 0)
         self.close_button.connect("clicked", self._close_box)
+        self.pack_end(self.close_button, False, False, 0)
+        self.pack_end(self.drag_button, False, False, 0)
 
-        self.drag_source_set(Gdk.ModifierType.BUTTON1_MASK, None, Gdk.DragAction.MOVE)
+    def __motion_notify_cb(self, widget, event):
+        if event.get_state() & Gdk.ModifierType.BUTTON1_MASK:
+            x, y = event.x, event.y
+            ev = widget.get_parent().get_parent()
+            fixed = ev.get_parent()
+            self.lx = self.x + x - self.sx
+            self.ly = self.y + y - self.sy
+            fixed.move(ev, self.lx, self.ly)
+
+    def __enter_notify_cb(self, widget, event):
+        win = widget.get_window()
+        hand_cursor = Gdk.Cursor.new(Gdk.CursorType.HAND2)
+        win.set_cursor(hand_cursor)
+
+    def _button_pressed(self, widget, event):
+        self.sx = event.x
+        self.sy = event.y
+
+    def _button_released(self, widget, event):
+        self.x = self.lx
+        self.y = self.ly
 
     def _close_box(self, button):
         self.get_parent().remove(self)
@@ -420,7 +455,7 @@ class MessageBox(Gtk.HBox):
 
         diff1 = self.x + rect.width - int(Gdk.Screen.width())
         diff2 = self.y + rect.height - int(Gdk.Screen.height())
-        if (diff1 >= 0 or diff2 >= 0):
+        if diff1 >= 0 or diff2 >= 0:
             ev = self.get_parent()
             fixed = ev.get_parent()
             self.x = random.randint(self.panel_width, int(Gdk.Screen.width()) - rect.width - self.panel_width)
