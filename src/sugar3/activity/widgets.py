@@ -393,7 +393,7 @@ class MessageBox(Gtk.HBox):
         close_icon = Icon(icon_name = 'entry-stop')
         close_icon.props.pixel_size = style.zoom(20)
 
-        drag_icon = Icon(icon_name = 'go-down')
+        drag_icon = Icon(icon_name = 'hand1')
         drag_icon.props.pixel_size = style.zoom(20)
 
         self.drag_button = Gtk.Button()
@@ -412,7 +412,7 @@ class MessageBox(Gtk.HBox):
         close_icon.show()
         self.close_button.connect("clicked", self._close_box)
         self.pack_end(self.close_button, False, False, 0)
-        self.pack_end(self.drag_button, False, False, 0)
+        self.pack_start(self.drag_button, False, False, style.zoom(20))
 
     def __motion_notify_cb(self, widget, event):
         if event.get_state() & Gdk.ModifierType.BUTTON1_MASK:
@@ -422,6 +422,7 @@ class MessageBox(Gtk.HBox):
             self.lx = self.x + x - self.sx
             self.ly = self.y + y - self.sy
             fixed.move(ev, self.lx, self.ly)
+            self.x, self.y = self.lx, self.ly
 
     def __enter_notify_cb(self, widget, event):
         win = widget.get_window()
