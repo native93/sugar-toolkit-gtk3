@@ -49,8 +49,8 @@ from sugar3.graphics.palette import MouseSpeedDetector
 from sugar3.presence import presenceservice
 from sugar3.activity import activity
 
+from sugar3 import mime
 from sugar3 import profile
-
 
 from telepathy.interfaces import CHANNEL_INTERFACE
 from telepathy.interfaces import CHANNEL_INTERFACE_GROUP
@@ -566,18 +566,19 @@ class BulletinBoard():
 
         self.fixed = Gtk.Fixed()
 
-        self.button = BulletinButton()
-        self.button.connect("clicked", self._toggle)
+        #self.button = BulletinButton()
+        #self.button.connect("clicked", self._toggle)
 
-        self.box_button = ToolbarButton()
-        self.box_button.props.icon_name = 'computer'
+        self.button = ToolbarButton()
+        self.button.connect("clicked", self._toggle)
+        self.button.props.icon_name = 'computer-xo'
 
         self.toolbar = BulletinToolbar()
-        self.box_button.props.page = self.toolbar
+        self.button.props.page = self.toolbar
         self.toolbar.toolitems.entry.connect('activate', self.entry_activate_cb)
 
-        self.share_button = ShareButton(self._activity)
-        self.share_button.private.props.active = False
+        #self.share_button = ShareButton(self._activity)
+        #self.share_button.private.props.active = False
 
         pserv = presenceservice.get_instance()
         self.owner = pserv.get_owner()
@@ -703,7 +704,7 @@ class BulletinBoard():
         self._activity.shared_activity.connect('buddy-joined', self._buddy_joined_cb)
         self._activity.shared_activity.connect('buddy-left', self._buddy_left_cb)
 
-        self.box_button.props.sensitive = True
+        self.button.props.sensitive = True
 
     def _received_cb(self, buddy, text):
         if buddy:
@@ -754,20 +755,25 @@ class BulletinBoard():
 
     def _toggle(self, button):
 
-        if button.get_active():
+        if self.is_active is False:
+                self.is_active = True
+        else:
+                self.is_active = False
+
+        if self.is_active:
                 self.left.show()
                 self.right.show()
                 self.fixed.show_all()
-                self.share_button.show()
-                self.box_button.show()
-                self.is_active = True
+                #self.share_button.show()
+                #self.box_button.show()
+                #self.is_active = True
         else:
                 self.left.hide()
                 self.right.hide()
                 self.fixed.hide()
-                self.box_button.hide()
-                self.share_button.hide()
-                self.is_active = False
+                #self.box_button.hide()
+                #self.share_button.hide()
+                #self.is_active = False
 
     def _create_left_panel(self):
 
