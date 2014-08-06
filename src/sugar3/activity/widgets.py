@@ -34,8 +34,8 @@ from sugar3.graphics.toolbarbox import ToolbarButton
 from sugar3.graphics.toggletoolbutton import ToggleToolButton
 from sugar3.graphics import tray
 from jarabe.frame.framewindow import FrameWindow
-from jarabe.frame.clipboardtray import ClipboardTray
-from jarabe.frame.friendstray import FriendsTray
+from jarabe.bulletinframe.clipboardtray import ClipboardTray
+from jarabe.bulletinframe.friendstray import FriendsTray
 from sugar3.graphics.radiopalette import RadioPalette, RadioMenuButton
 from sugar3.graphics.radiotoolbutton import RadioToolButton
 from sugar3.graphics.xocolor import XoColor
